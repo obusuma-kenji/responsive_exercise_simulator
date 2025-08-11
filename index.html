@@ -1,0 +1,941 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI駆動型 臨床運動処方シミュレーター</title>
+    <style>
+        /* 基本スタイル */
+        :root {
+            --primary-color: #4a69bd;
+            --secondary-color: #6a89cc;
+            --accent-color: #f6b93b;
+            --success-color: #78e08f;
+            --warning-color: #f8c291;
+            --danger-color: #e55039;
+            --light-bg: #f5f6fa;
+            --dark-text: #2c3e50;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Hiragino Sans', 'Yu Gothic', sans-serif;
+            background: var(--light-bg);
+            min-height: 100vh;
+            color: var(--dark-text);
+            padding: 10px;
+        }
+
+        /* コンテナとヘッダー */
+        .container {
+            max-width: 1800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .header h1 { 
+            font-size: clamp(1.5rem, 4vw, 2.2rem); 
+            margin-bottom: 10px; 
+        }
+        .header p { 
+            opacity: 0.9; 
+            font-size: clamp(0.9rem, 2.5vw, 1.1rem); 
+            line-height: 1.4;
+        }
+
+        /* ゲームコンテンツレイアウト - レスポンシブ対応 */
+        .game-content {
+            display: grid;
+            gap: 15px;
+            padding: 15px;
+        }
+
+        /* デスクトップ: 3列レイアウト */
+        @media (min-width: 1200px) {
+            .game-content {
+                grid-template-columns: 350px 1fr 400px;
+                padding: 20px;
+                gap: 20px;
+            }
+        }
+
+        /* タブレット: 縦積みレイアウト */
+        @media (min-width: 768px) and (max-width: 1199px) {
+            .game-content {
+                grid-template-columns: 1fr;
+                grid-template-areas: 
+                    "client"
+                    "planner"
+                    "results";
+            }
+            .client-info { grid-area: client; }
+            .weekly-planner { grid-area: planner; }
+            .results-panel { grid-area: results; }
+        }
+
+        /* スマートフォン: 縦積みレイアウト */
+        @media (max-width: 767px) {
+            body { padding: 5px; }
+            .container { border-radius: 10px; }
+            .header { padding: 15px 10px; }
+            .game-content {
+                grid-template-columns: 1fr;
+                padding: 10px;
+                gap: 15px;
+            }
+        }
+
+        /* パネル共通スタイル */
+        .panel {
+            background: #ffffff;
+            padding: 20px;
+            border-radius: 15px;
+            border: 1px solid #e9ecef;
+            display: flex;
+            flex-direction: column;
+        }
+
+        @media (max-width: 767px) {
+            .panel {
+                padding: 15px;
+                border-radius: 10px;
+            }
+        }
+        
+        /* モーダル - レスポンシブ対応 */
+        .modal-backdrop {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6);
+            z-index: 1000;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            width: 100%;
+            max-width: 450px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        @media (max-width: 767px) {
+            .modal-content {
+                padding: 20px;
+                border-radius: 10px;
+                margin: 10px;
+            }
+        }
+
+        .modal-content h3 { 
+            margin-bottom: 20px; 
+            font-size: clamp(1.1rem, 3vw, 1.3rem);
+        }
+        .modal-form-group { margin-bottom: 15px; }
+        .modal-form-group label { 
+            display: block; 
+            margin-bottom: 5px; 
+            font-weight: bold; 
+            font-size: clamp(0.9rem, 2.5vw, 1rem);
+        }
+        .modal-form-group input { 
+            width: 100%; 
+            padding: 12px; 
+            border-radius: 8px; 
+            border: 1px solid #bdc3c7; 
+            font-size: 16px; /* iOS でズームを防ぐ */
+        }
+
+        /* 左パネル：クライアント情報 */
+        .client-info h3 { 
+            border-left: 5px solid var(--primary-color); 
+            padding-left: 10px; 
+            margin-bottom: 20px; 
+            font-size: clamp(1.1rem, 3vw, 1.3rem);
+        }
+        .client-detail { 
+            margin-bottom: 12px; 
+            line-height: 1.6; 
+            font-size: clamp(0.9rem, 2.5vw, 1rem);
+        }
+        .client-detail strong { 
+            display: inline-block; 
+            width: auto;
+            min-width: 80px;
+        }
+        
+        @media (max-width: 767px) {
+            .client-detail strong {
+                display: block;
+                margin-bottom: 2px;
+            }
+        }
+
+        .client-medical-info { 
+            background: var(--light-bg); 
+            border-radius: 8px; 
+            padding: 15px; 
+            margin-top: 15px; 
+        }
+        .client-medical-info h4 { 
+            margin-bottom: 10px; 
+            font-size: clamp(1rem, 2.5vw, 1.1rem);
+        }
+        .client-notes { 
+            border-top: 1px dashed #ccc; 
+            padding-top: 15px; 
+            margin-top: 15px; 
+            font-style: italic; 
+        }
+
+        /* 中央パネル：週間プランナー */
+        .weekly-planner h3 { 
+            text-align: center; 
+            margin-bottom: 20px; 
+            font-size: clamp(1.1rem, 3vw, 1.3rem);
+        }
+
+        .weekly-calendar {
+            display: grid;
+            gap: 8px;
+            margin-bottom: 20px;
+        }
+
+        /* デスクトップ: 7列 */
+        @media (min-width: 1200px) {
+            .weekly-calendar {
+                grid-template-columns: repeat(7, 1fr);
+                gap: 10px;
+            }
+        }
+
+        /* タブレット: 7列（少し狭め） */
+        @media (min-width: 768px) and (max-width: 1199px) {
+            .weekly-calendar {
+                grid-template-columns: repeat(7, 1fr);
+            }
+        }
+
+        /* スマートフォン: 縦積み */
+        @media (max-width: 767px) {
+            .weekly-calendar {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .day-column {
+            background: var(--light-bg);
+            border-radius: 12px;
+            padding: 10px;
+            border: 2px solid transparent;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            min-height: 200px;
+        }
+
+        @media (min-width: 768px) {
+            .day-column {
+                min-height: 300px;
+            }
+        }
+
+        @media (min-width: 1200px) {
+            .day-column {
+                min-height: 400px;
+            }
+        }
+
+        @media (max-width: 767px) {
+            .day-column {
+                min-height: 120px;
+                display: flex;
+                flex-direction: column;
+            }
+        }
+
+        .day-column.active { 
+            border-color: var(--primary-color); 
+            background: #e9eefb; 
+        }
+
+        .day-header { 
+            font-weight: bold; 
+            text-align: center; 
+            padding: 8px; 
+            border-radius: 8px; 
+            background: #e1e8f0; 
+            margin-bottom: 10px; 
+            font-size: clamp(0.9rem, 2.5vw, 1rem);
+        }
+
+        .day-exercises { 
+            flex-grow: 1;
+            position: relative; 
+        }
+
+        .day-exercise-item {
+            background: #d1e7dd;
+            border-left: 4px solid #27ae60;
+            border-radius: 4px;
+            padding: 6px 8px;
+            margin-bottom: 6px;
+            font-size: clamp(0.75rem, 2vw, 0.8rem);
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            line-height: 1.3;
+        }
+
+        .day-exercise-item .remove-btn { 
+            color: var(--danger-color); 
+            font-weight: bold; 
+            cursor: pointer; 
+            padding: 2px 4px;
+            border-radius: 3px;
+            transition: background 0.2s;
+        }
+
+        .day-exercise-item .remove-btn:hover {
+            background: rgba(229, 80, 57, 0.1);
+        }
+
+        .day-time-total { 
+            text-align: center; 
+            font-weight: bold; 
+            margin-top: 10px; 
+            font-size: clamp(0.8rem, 2vw, 0.9rem); 
+        }
+
+        .exercise-pool { 
+            flex-grow: 1; 
+            display: flex; 
+            flex-direction: column; 
+        }
+        .exercise-pool h4 { 
+            text-align: center; 
+            margin-bottom: 15px; 
+            font-size: clamp(1rem, 2.5vw, 1.1rem);
+        }
+
+        .exercise-cards {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 5px;
+            display: grid;
+            gap: 10px;
+        }
+
+        /* レスポンシブグリッド */
+        @media (min-width: 1200px) {
+            .exercise-cards {
+                grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            }
+        }
+
+        @media (min-width: 768px) and (max-width: 1199px) {
+            .exercise-cards {
+                grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+            }
+        }
+
+        @media (max-width: 767px) {
+            .exercise-cards {
+                grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            }
+        }
+
+        .exercise-card {
+            border: 2px solid #bdc3c7;
+            border-radius: 10px;
+            padding: 12px;
+            cursor: pointer;
+            text-align: center;
+            transition: all 0.3s ease;
+            min-height: 70px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .exercise-card:hover { 
+            border-color: var(--primary-color); 
+            transform: translateY(-2px); 
+        }
+
+        .exercise-name { 
+            font-weight: bold; 
+            font-size: clamp(0.85rem, 2vw, 0.9rem); 
+            margin-bottom: 4px;
+        }
+        .exercise-type { 
+            font-size: clamp(0.7rem, 1.8vw, 0.75rem); 
+            color: #7f8c8d; 
+        }
+
+        /* 右パネル：AI評価 */
+        .results-panel h3 { 
+            border-left: 5px solid var(--accent-color); 
+            padding-left: 10px; 
+            margin-bottom: 20px; 
+            font-size: clamp(1.1rem, 3vw, 1.3rem);
+        }
+
+        .summary-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        @media (max-width: 480px) {
+            .summary-grid {
+                grid-template-columns: 1fr;
+                gap: 10px;
+            }
+        }
+
+        .summary-box { 
+            background: var(--light-bg); 
+            padding: 15px; 
+            border-radius: 8px; 
+        }
+        .summary-box .label { 
+            font-size: clamp(0.8rem, 2vw, 0.9rem); 
+            margin-bottom: 5px; 
+        }
+        .summary-box .value { 
+            font-size: clamp(1.3rem, 4vw, 1.5rem); 
+            font-weight: bold; 
+        }
+        .value.score-excellent { color: var(--success-color); }
+        .value.score-good { color: var(--accent-color); }
+        .value.score-poor { color: var(--danger-color); }
+        
+        .feedback-area {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding-right: 5px;
+            max-height: 400px;
+        }
+
+        .feedback-section { margin-bottom: 20px; }
+        .feedback-section h4 {
+            padding: 8px 12px;
+            border-radius: 5px;
+            color: white;
+            margin-bottom: 10px;
+            font-size: clamp(0.9rem, 2.5vw, 1rem);
+        }
+        .feedback-section.positive h4 { background-color: var(--success-color); }
+        .feedback-section.negative h4 { background-color: var(--danger-color); }
+        .feedback-item {
+            background: #fff;
+            border: 1px solid #eee;
+            border-left: 3px solid;
+            padding: 10px;
+            margin-bottom: 8px;
+            border-radius: 4px;
+            font-size: clamp(0.85rem, 2vw, 0.9rem);
+            line-height: 1.4;
+        }
+        .feedback-item.positive { border-left-color: var(--success-color); }
+        .feedback-item.negative { border-left-color: var(--danger-color); }
+
+        /* コントロールボタン */
+        .controls { 
+            display: flex; 
+            gap: 8px; 
+            margin-top: 20px; 
+            flex-wrap: wrap;
+        }
+
+        @media (max-width: 767px) {
+            .controls {
+                flex-direction: column;
+                gap: 10px;
+            }
+        }
+
+        .btn {
+            padding: 12px 16px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: clamp(0.85rem, 2vw, 0.9rem);
+            transition: all 0.3s ease;
+            flex: 1;
+            min-height: 44px; /* タッチフレンドリー */
+        }
+
+        @media (min-width: 768px) {
+            .btn {
+                flex: none;
+                min-width: 120px;
+            }
+        }
+
+        .btn-primary { background: var(--primary-color); color: white; }
+        .btn-success { background: var(--success-color); color: white; }
+        .btn-danger { background: var(--danger-color); color: white; }
+        .btn:hover { opacity: 0.85; transform: translateY(-1px); }
+        .btn:active { transform: translateY(0); }
+
+        /* スクロールバーのスタイリング */
+        .feedback-area::-webkit-scrollbar,
+        .exercise-cards::-webkit-scrollbar {
+            width: 6px;
+        }
+        .feedback-area::-webkit-scrollbar-track,
+        .exercise-cards::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 3px;
+        }
+        .feedback-area::-webkit-scrollbar-thumb,
+        .exercise-cards::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+            border-radius: 3px;
+        }
+        .feedback-area::-webkit-scrollbar-thumb:hover,
+        .exercise-cards::-webkit-scrollbar-thumb:hover {
+            background: #a8a8a8;
+        }
+
+        /* フォーカス状態のアクセシビリティ改善 */
+        .btn:focus,
+        .exercise-card:focus,
+        .day-column:focus {
+            outline: 2px solid var(--primary-color);
+            outline-offset: 2px;
+        }
+
+        /* 印刷スタイル */
+        @media print {
+            body { background: white; padding: 0; }
+            .container { box-shadow: none; }
+            .controls { display: none; }
+            .modal-backdrop { display: none !important; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>🤖 AI駆動型 臨床運動処方シミュレーター</h1>
+            <p>AIが生成するリアルなクライアントに対し、最適な週間運動プログラムを立案・提案しましょう</p>
+        </header>
+        
+        <main class="game-content">
+            <section class="panel client-info">
+                <h3>👤 クライアントカルテ</h3>
+                <div id="clientDetails"></div>
+            </section>
+
+            <section class="panel weekly-planner">
+                <h3>📅 週間運動プランナー</h3>
+                <div class="weekly-calendar" id="weeklyCalendar"></div>
+                <div class="exercise-pool">
+                    <h4>🏃 運動メニュー選択</h4>
+                    <div class="exercise-cards" id="exercisePool"></div>
+                </div>
+            </section>
+
+            <section class="panel results-panel">
+                <h3>🔬 AIによる評価・フィードバック</h3>
+                <div class="summary-grid">
+                    <div class="summary-box">
+                        <div class="label">適合スコア</div>
+                        <div class="value score-poor" id="scoreDisplay">0</div>
+                    </div>
+                    <div class="summary-box">
+                        <div class="label">週間運動時間</div>
+                        <div class="value" id="totalTimeDisplay">0 分</div>
+                    </div>
+                </div>
+                <div id="feedback" class="feedback-area">
+                    <p style="text-align: center; color: #7f8c8d;">プログラムを作成し、「評価を依頼」ボタンを押してください。</p>
+                </div>
+                <div class="controls">
+                    <button class="btn btn-primary" onclick="generateNewClient()">🔄 新クライアント</button>
+                    <button class="btn btn-success" onclick="evaluateProgram()">🤝 評価を依頼</button>
+                    <button class="btn btn-danger" onclick="clearSelections()">🗑️ 全クリア</button>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <div class="modal-backdrop" id="exerciseModal">
+        <div class="modal-content">
+            <h3 id="modalTitle">運動設定</h3>
+            <div id="modalForm"></div>
+            <div class="controls">
+                <button class="btn btn-success" id="modalConfirmBtn">追加</button>
+                <button class="btn btn-danger" onclick="closeModal()">キャンセル</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- データ定義 ---
+
+        // 運動データベース（より詳細なパラメータを追加）
+        const exercises = [
+            { id: 1, name: "ウォーキング", type: "有酸素", intensity: 1, equipment: "なし", baseDuration: 1.0, unit: "分", contra: ["安静指示"], target: ["全身持久力"] },
+            { id: 2, name: "ジョギング", type: "有酸素", intensity: 2, equipment: "なし", baseDuration: 1.0, unit: "分", contra: ["重度心疾患", "変形性膝関節症"], target: ["全身持久力", "心肺機能"] },
+            { id: 3, name: "水中歩行", type: "有酸素", intensity: 1, equipment: "プール", baseDuration: 1.0, unit: "分", contra: [], target: ["全身持久力", "関節保護"] },
+            { id: 4, name: "サイクリング", type: "有酸素", intensity: 2, equipment: "自転車", baseDuration: 1.0, unit: "分", contra: ["重度心疾患"], target: ["下半身持久力", "心肺機能"] },
+            { id: 5, name: "チェアスクワット", type: "筋力", intensity: 1, equipment: "椅子", baseDuration: 0.1, unit: "回", contra: [], target: ["大腿四頭筋", "大臀筋"] },
+            { id: 6, name: "自重スクワット", type: "筋力", intensity: 2, equipment: "なし", baseDuration: 0.1, unit: "回", contra: ["変形性膝関節症"], target: ["大腿四頭筋", "大臀筋"] },
+            { id: 7, name: "膝つき腕立て伏せ", type: "筋力", intensity: 1, equipment: "なし", baseDuration: 0.1, unit: "回", contra: ["肩関節痛"], target: ["大胸筋", "上腕三頭筋"] },
+            { id: 8, name: "プランク", type: "筋力", intensity: 2, equipment: "なし", baseDuration: 1.0, unit: "秒", contra: ["重度高血圧"], target: ["体幹安定性"] },
+            { id: 9, name: "全身ストレッチ", type: "柔軟性", intensity: 1, equipment: "なし", baseDuration: 1.0, unit: "分", contra: ["急性期炎症"], target: ["柔軟性向上", "リラクゼーション"] },
+            { id: 10, name: "片足立ち", type: "バランス", intensity: 1, equipment: "なし", baseDuration: 1.0, unit: "秒", contra: [], target: ["平衡感覚", "転倒予防"] },
+        ];
+
+        // クライアント生成用のデータパーツ
+        const clientData = {
+            names: ["田中", "佐藤", "鈴木", "高橋", "伊藤"],
+            genders: ["男性", "女性"],
+            ages: [45, 52, 58, 65, 71, 78],
+            goals: ["減量", "健康維持", "筋力向上", "生活習慣病の予防・改善", "リハビリ"],
+            conditions: [
+                { id: "なし", name: "特記事項なし", tags: [] },
+                { id: "高血圧", name: "本態性高血圧 I度", tags: ["高血圧"], notes: "降圧剤（カルシウム拮抗薬）を服用中。急な血圧上昇に注意。" },
+                { id: "糖尿病", name: "2型糖尿病", tags: ["糖尿病"], notes: "血糖値コントロールのため運動を希望。低血糖に注意。" },
+                { id: "膝痛", name: "変形性膝関節症", tags: ["変形性膝関節症"], notes: "右膝に軽度の痛みあり。高負荷・高インパクトの運動は避ける。" },
+                { id: "腰痛", name: "慢性腰痛症", tags: ["腰痛"], notes: "長時間同じ姿勢でいると痛みが出る。体幹の安定性が課題。" },
+            ],
+            personalities: ["真面目で計画的", "飽きっぽいが、楽しいことなら続く", "仕事が多忙で時間が不規則", "運動初心者で不安を感じている", "過去に自己流で運動し、怪我をした経験がある"]
+        };
+
+        // --- ゲーム状態管理 ---
+        let currentClient = {};
+        let weeklyProgram = {};
+        let selectedDay = null;
+
+        const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+        const dayDisplayNames = ['月', '火', '水', '木', '金', '土', '日'];
+
+        // --- 初期化・リセット処理 ---
+        function initGame() {
+            dayNames.forEach(day => { weeklyProgram[day] = []; });
+            generateNewClient();
+            renderExercisePool();
+        }
+
+        function clearSelections() {
+            dayNames.forEach(day => { weeklyProgram[day] = []; });
+            renderWeeklyCalendar();
+            updateSummary();
+            clearFeedback();
+        }
+
+        // --- クライアント生成 ---
+        function generateNewClient() {
+            const baseCondition = clientData.conditions[Math.floor(Math.random() * clientData.conditions.length)];
+            currentClient = {
+                name: `${clientData.names[Math.floor(Math.random() * clientData.names.length)]}さん`,
+                age: clientData.ages[Math.floor(Math.random() * clientData.ages.length)],
+                gender: clientData.genders[Math.floor(Math.random() * clientData.genders.length)],
+                goal: clientData.goals[Math.floor(Math.random() * clientData.goals.length)],
+                condition: baseCondition,
+                personality: clientData.personalities[Math.floor(Math.random() * clientData.personalities.length)],
+            };
+            
+            // 年齢に応じた運動上限を設定
+            if (currentClient.age > 65) {
+                currentClient.timeLimit = 150;
+            } else if (currentClient.age > 50) {
+                currentClient.timeLimit = 240;
+            } else {
+                currentClient.timeLimit = 300;
+            }
+
+            clearSelections();
+            updateClientDisplay();
+        }
+
+        // --- 表示更新（レンダリング） ---
+        function updateClientDisplay() {
+            document.getElementById('clientDetails').innerHTML = `
+                <div class="client-detail"><strong>氏名:</strong> ${currentClient.name}</div>
+                <div class="client-detail"><strong>年齢:</strong> ${currentClient.age}歳 (${currentClient.gender})</div>
+                <div class="client-detail"><strong>主訴/目標:</strong> ${currentClient.goal}</div>
+                <div class="client-medical-info">
+                    <h4><span style="font-size: 1.2em;">⚕️</span> 診断・現病歴</h4>
+                    <p>${currentClient.condition.name}</p>
+                    <small>${currentClient.condition.notes || ""}</small>
+                </div>
+                <div class="client-notes">
+                    <h4><span style="font-size: 1.2em;">📝</span> パーソナリティ・生活</h4>
+                    <p>${currentClient.personality}</p>
+                </div>
+                <div class="client-detail" style="margin-top: 15px; color: var(--danger-color);">
+                    <strong>週間上限:</strong> ${currentClient.timeLimit}分
+                </div>
+            `;
+        }
+        
+        function renderWeeklyCalendar() {
+            const container = document.getElementById('weeklyCalendar');
+            container.innerHTML = '';
+            dayNames.forEach((day, index) => {
+                const dayColumn = document.createElement('div');
+                dayColumn.className = 'day-column';
+                if (day === selectedDay) dayColumn.classList.add('active');
+                dayColumn.onclick = () => selectDay(day);
+
+                const totalTime = weeklyProgram[day].reduce((sum, ex) => sum + ex.duration, 0);
+
+                dayColumn.innerHTML = `
+                    <div class="day-header">${dayDisplayNames[index]}</div>
+                    <div class="day-exercises">
+                        ${weeklyProgram[day].map((ex, i) => `
+                            <div class="day-exercise-item" onclick="event.stopPropagation(); showExerciseDetails('${day}', ${i})">
+                                <div>
+                                    <div>${ex.name}</div>
+                                    <small>(${ex.sets} ${ex.unit === '回' ? 'x' : ''} ${ex.reps})</small>
+                                </div>
+                                <span class="remove-btn" onclick="event.stopPropagation(); removeFromDay('${day}', ${i})">✕</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                    <div class="day-time-total">${totalTime}分</div>
+                `;
+                container.appendChild(dayColumn);
+            });
+        }
+
+        function renderExercisePool() {
+            const container = document.getElementById('exercisePool');
+            container.innerHTML = exercises.map(ex => `
+                <div class="exercise-card" onclick="openModal(${ex.id})" tabindex="0">
+                    <div class="exercise-name">${ex.name}</div>
+                    <div class="exercise-type">${ex.type} / 強度:${'★'.repeat(ex.intensity)}</div>
+                </div>
+            `).join('');
+        }
+
+        function updateSummary(score = 0) {
+            const totalTime = Object.values(weeklyProgram).flat().reduce((sum, ex) => sum + ex.duration, 0);
+            
+            const scoreDisplay = document.getElementById('scoreDisplay');
+            scoreDisplay.textContent = score;
+            scoreDisplay.className = 'value ';
+            if (score >= 80) scoreDisplay.classList.add('score-excellent');
+            else if (score >= 50) scoreDisplay.classList.add('score-good');
+            else scoreDisplay.classList.add('score-poor');
+            
+            const timeDisplay = document.getElementById('totalTimeDisplay');
+            timeDisplay.textContent = `${totalTime} 分`;
+            timeDisplay.style.color = totalTime > currentClient.timeLimit ? 'var(--danger-color)' : 'inherit';
+        }
+
+        function clearFeedback() {
+             document.getElementById('feedback').innerHTML = `
+                <p style="text-align: center; color: #7f8c8d;">プログラムを作成し、「評価を依頼」ボタンを押してください。</p>
+            `;
+            updateSummary();
+        }
+
+        // --- プログラム操作 ---
+        function selectDay(day) {
+            selectedDay = day;
+            renderWeeklyCalendar();
+        }
+
+        function addToDay(exerciseId, sets, reps) {
+            if (!selectedDay) {
+                alert('運動を追加する曜日を選択してください。');
+                return;
+            }
+            const exercise = exercises.find(e => e.id === exerciseId);
+            const duration = Math.ceil(exercise.baseDuration * sets * reps / (exercise.unit === '分' ? 1 : (exercise.unit === '秒' ? 60 : 1)));
+            
+            weeklyProgram[selectedDay].push({ ...exercise, sets, reps, duration, originalId: exercise.id });
+            closeModal();
+            renderWeeklyCalendar();
+            updateSummary();
+        }
+
+        function removeFromDay(day, index) {
+            weeklyProgram[day].splice(index, 1);
+            renderWeeklyCalendar();
+            updateSummary();
+        }
+
+        // --- モーダル処理 ---
+        function openModal(exerciseId) {
+            const exercise = exercises.find(e => e.id === exerciseId);
+            document.getElementById('modalTitle').textContent = `${exercise.name} の設定`;
+            
+            const form = document.getElementById('modalForm');
+            form.innerHTML = `
+                <div class="modal-form-group">
+                    <label for="sets">セット数</label>
+                    <input type="number" id="sets" value="3" min="1">
+                </div>
+                <div class="modal-form-group">
+                    <label for="reps">${exercise.unit}数</label>
+                    <input type="number" id="reps" value="10" min="1">
+                </div>
+            `;
+            
+            const confirmBtn = document.getElementById('modalConfirmBtn');
+            confirmBtn.onclick = () => {
+                const sets = document.getElementById('sets').value;
+                const reps = document.getElementById('reps').value;
+                addToDay(exerciseId, parseInt(sets), parseInt(reps));
+            };
+            
+            document.getElementById('exerciseModal').style.display = 'flex';
+        }
+
+        function closeModal() {
+            document.getElementById('exerciseModal').style.display = 'none';
+        }
+        
+        function showExerciseDetails(day, index) {
+            const ex = weeklyProgram[day][index];
+            alert(
+                `${ex.name} (${dayDisplayNames[dayNames.indexOf(day)]}曜日)\n` +
+                `タイプ: ${ex.type}\n` +
+                `強度: ${'★'.repeat(ex.intensity)}\n` +
+                `設定: ${ex.sets}セット × ${ex.reps} ${ex.unit}\n` +
+                `推定時間: ${ex.duration}分`
+            );
+        }
+
+        // --- 評価ロジック ---
+        function evaluateProgram() {
+            let score = 100;
+            let positiveFeedback = [];
+            let negativeFeedback = [];
+            const program = Object.values(weeklyProgram).flat();
+
+            if (program.length === 0) {
+                alert("運動が一つも設定されていません。");
+                return;
+            }
+
+            // 1. 基本的なチェック
+            const totalTime = program.reduce((sum, ex) => sum + ex.duration, 0);
+            const exerciseDays = dayNames.filter(day => weeklyProgram[day].length > 0).length;
+            const restDays = 7 - exerciseDays;
+
+            if (restDays === 0) {
+                score -= 25;
+                negativeFeedback.push("休息日がありません。過度なトレーニングは怪我や疲労の原因となります。最低1〜2日の休息日を設けましょう。");
+            } else if (restDays < 2) {
+                score -= 10;
+                negativeFeedback.push("休息日が1日のみです。可能であればもう1日設けることで、より効果的な回復が期待できます。");
+            } else if (restDays >= 2 && restDays <= 4) {
+                score += 15;
+                positiveFeedback.push(`休息日が${restDays}日設定されており、運動と回復のバランスが良好です。`);
+            } else if (restDays > 4) {
+                score -= 15;
+                negativeFeedback.push(`運動日数が${exerciseDays}日と少なめです。目標達成のため、週3日以上の運動を検討しましょう。`);
+            }
+            
+            if (totalTime > currentClient.timeLimit) {
+                score -= 30;
+                negativeFeedback.push(`週間の総運動時間が上限（${currentClient.timeLimit}分）を超えています。クライアントの負担を考慮し、時間を見直してください。`);
+            } else if (totalTime < currentClient.timeLimit * 0.5) {
+                score -= 15;
+                negativeFeedback.push(`週間の総運動時間が目標（${currentClient.timeLimit}分）に対して少なすぎます。もう少し運動量を増やしましょう。`);
+            } else {
+                positiveFeedback.push("週間の総運動時間が適切に設定されています。");
+            }
+            
+            // 2. 運動内容の評価
+            const types = [...new Set(program.map(p => p.type))];
+            if (types.includes("有酸素") && types.includes("筋力") && types.includes("柔軟性")) {
+                score += 20;
+                positiveFeedback.push("有酸素・筋力・柔軟性の3要素がバランス良く含まれており、非常に優れたプログラムです。");
+            } else if (types.length < 2) {
+                score -= 15;
+                negativeFeedback.push("運動の種類が偏っています。筋トレと有酸素運動など、複数の種類の運動を組み合わせることを推奨します。");
+            }
+
+            // 3. クライアントの特性との適合性評価
+            program.forEach(ex => {
+                // 禁忌事項チェック
+                if (ex.contra.some(c => currentClient.condition.tags.includes(c))) {
+                    score -= 25;
+                    negativeFeedback.push(`【要注意】${ex.name}は、クライアントの${currentClient.condition.name}に対して禁忌（避けるべき）の可能性があります。`);
+                }
+                
+                // 強度チェック
+                if (currentClient.age > 70 && ex.intensity > 1) {
+                    score -= 5;
+                    negativeFeedback.push(`高齢のクライアントに対し、${ex.name}は強度が少し高い可能性があります。より安全な種目を検討してください。`);
+                }
+            });
+
+            // 目標達成への貢献度
+            if (currentClient.goal === "減量" && !types.includes("有酸素")) {
+                score -= 10;
+                negativeFeedback.push("減量が目標ですが、中心となる有酸素運動が含まれていません。");
+            }
+            if (currentClient.goal === "筋力向上" && !types.includes("筋力")) {
+                score -= 10;
+                negativeFeedback.push("筋力向上が目標ですが、筋力トレーニングが含まれていません。");
+            }
+
+            // 4. 最終スコア調整とフィードバック表示
+            score = Math.max(0, Math.min(120, score)); // スコアを0-120の範囲に
+            
+            const feedbackContainer = document.getElementById('feedback');
+            let feedbackHTML = '';
+            
+            if (positiveFeedback.length > 0) {
+                feedbackHTML += '<div class="feedback-section positive"><h4>👍 良い点</h4>';
+                positiveFeedback.forEach(fb => feedbackHTML += `<div class="feedback-item positive">${fb}</div>`);
+                feedbackHTML += '</div>';
+            }
+            if (negativeFeedback.length > 0) {
+                feedbackHTML += '<div class="feedback-section negative"><h4>⚠️ 確認・改善点</h4>';
+                negativeFeedback.forEach(fb => feedbackHTML += `<div class="feedback-item negative">${fb}</div>`);
+                feedbackHTML += '</div>';
+            }
+
+            if (feedbackHTML === '') {
+                feedbackHTML = '<div class="feedback-section positive"><h4>🎉 素晴らしい！</h4><div class="feedback-item positive">特筆すべき問題点はなく、非常にバランスの取れた素晴らしいプログラムです。</div></div>';
+            }
+            
+            feedbackContainer.innerHTML = feedbackHTML;
+            updateSummary(score);
+        }
+
+        // キーボードアクセシビリティの追加
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && document.getElementById('exerciseModal').style.display === 'flex') {
+                closeModal();
+            }
+        });
+
+        // --- ゲーム開始 ---
+        window.onload = initGame;
+    </script>
+</body>
+</html>
